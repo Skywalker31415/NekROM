@@ -274,9 +274,6 @@ c      call mor_set_params_uni_pre
       if (ifsetbases) call setbases
       call rom_userbases
 
-      if (rmode.eq.'ALL'.or.rmode.eq.'OFF'.or.rmode.eq.'AEQ') then
-         call dump_bas
-      endif
 
       ubdim = lx1*ly1*lz1*lelm
 
@@ -294,7 +291,12 @@ c      call mor_set_params_uni_pre
       enddo
       enddo
       enddo
+      
+      if (rmode.eq.'ALL'.or.rmode.eq.'OFF'.or.rmode.eq.'AEQ') then
+         call dump_bas
+      endif
 
+      
       icalldmhd=2
 
       return
