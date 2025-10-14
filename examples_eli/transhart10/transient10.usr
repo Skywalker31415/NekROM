@@ -203,7 +203,7 @@ c-----------------------------------------------------------------------
 
       call reconv(vx,vy,vz,u)
       if (ifrom(ifldb)) call reconb(bx,by,bz,b)
-      ! call hpts
+      call hpts
       
        if (.false.) then
 c      if (ad_step.eq.0) then
@@ -319,10 +319,10 @@ c-----------------------------------------------------------------------
       include 'TOTAL'
       include 'MOR'
 
-      ! if (ifrom(1).and.ifield.eq.1) then
-      !   write(*,*) 'ADDING TO RHS', ''
-      !   call add2s2(rom_rhs,rf,param(2),nb)
-      ! endif
+      if (ifrom(1).and.ifield.eq.1) then
+        write(*,*) 'ADDING TO RHS', ''
+        call add2s2(rom_rhs,rf,param(2),nb)
+      endif
 
       return
       end
