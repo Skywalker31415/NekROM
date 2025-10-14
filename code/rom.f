@@ -263,6 +263,8 @@ c-----------------------------------------------------------------------
       common /mhdflag/ icalldmhd
 
       if (nio.eq.0) write (6,*) 'inside rom_setup_mhd'
+      jfield = ifield
+      ifield=ifldmhd
 
       icalldmhd=1
 
@@ -298,6 +300,7 @@ c      call mor_set_params_uni_pre
 
       
       icalldmhd=2
+      ifield=jfield
 
       return
       end
