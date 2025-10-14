@@ -115,6 +115,14 @@ c     if (icount.le.2) then
             call mxm(rhstmp(1),1,wt(1,2),nb,rhs(1,2),nb)
          endif
 
+         if (cfloc.eq.'POST') then
+         if (cftype.eq.'TFUN') then
+            call pod_proj(rhs(1,2),rbf,nb,'step  ')
+         else if (cftype.eq.'DIFF') then
+            call pod_df(rhs(1,2))
+         endif
+         endif
+
          tsolve_time=tsolve_time+dnekclock()-ttime
          endif
       endif
@@ -124,6 +132,7 @@ c     if (icount.le.2) then
          if (ad_step.le.3) then
             ttime=dnekclock()
             call seth(hlm,au,bu,1./ad_re)
+            call outmatb(hlm,nb,nb,'hlm   ',ad_step)
             if (ifedvs) then
                edv(0) = 1
                edv(1) = 1
@@ -190,13 +199,11 @@ c     if (icount.le.2) then
          endif
 
          if (cfloc.eq.'POST') then
-            ! copy unfiltered coefficients
-            call copy(utmp1(1),rhs(1,1),nb)
-            if (cftype.eq.'TFUN') then
-               call pod_proj(rhs(1,1),rbf,nb,'step  ')
-            else if (cftype.eq.'DIFF') then
-               call pod_df(rhs(1,1))
-            endif
+         if (cftype.eq.'TFUN') then
+            call pod_proj(rhs(1,1),rbf,nb,'step  ')
+         else if (cftype.eq.'DIFF') then
+            call pod_df(rhs(1,1))
+         endif
          endif
 
          solve_time=solve_time+dnekclock()-ttime
@@ -232,16 +239,343 @@ c     if (icount.le.2) then
          call copy(rhs(1,2),rhs(1,1),nb)
       endif
 
-      if (cfloc.eq.'POST') then
-         if (cftype.eq.'POLY') then
-            call apply_les_imp(rhs(0,1),rhs(0,2),rdft,fles1,fles2,rtmp1)
-         elseif ((cftype.eq.'TFUN').or.(cftype.eq.'DIFF')) then
-            call efr_relaxation(rhs(1,1),utmp1(1),relax,nb)
-         endif
-      endif
+      if (cfloc.eq.'POST'.and.cftype.eq.'POLY')
+     $   call apply_les_imp(rhs(0,1),rhs(0,2),rdft,fles1,fles2,rtmp1)
 
       if (ifrom(2)) call shift(ut,rhs(0,2),nb+1,5)
       if (ifrom(1)) call shift(u,rhs,nb+1,5)
+
+      ifield=jfield
+
+      ustep_time=ustep_time+dnekclock()-ulast_time
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine bdfext_step_mhd
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'MOR'
+
+      common /scrbdfext/ rhs(0:lb,2),rhstmp(0:lb),
+     $                   utmp1(0:lb),utmp2(0:lb)
+
+      common /eddyma/ cedm((lb**2-1)*ledvis+1),cedvec((lb-1)*ledvis+1)
+
+      common /utmpbdf/ utmp3(0:(lub+1)*5-1),utmp4(0:(lub+1)*5-1),
+     $                 rhstmp1(0:lb,2), rhstmp2(0:lb,2), rhsb(0:lb,2)
+      logical ifdebug
+      integer chekbc
+      integer z
+
+      chekbc=0
+
+      ifdebug=.true.
+      ifdebug=.false.
+      jfield=ifield
+
+      ulast_time = dnekclock()
+
+      n=lx1*ly1*lz1*nelt
+
+      icount = min(max(1,ad_step),3)
+
+      rhs(0,1)=1.
+      rhs(0,2)=1.
+      if (ifrom(ifldb)) then
+         rhsb(0,1)=1.
+         rhsb(0,2)=1.
+      endif
+
+
+      ifield=2
+      if (ifrom(2)) then
+         if (ad_step.le.3) then
+            ttime=dnekclock()
+            call seth(hlm(1,2),at,bt,1./ad_pe)
+            if (ad_step.eq.3)
+     $         call dump_serial(hlm(1,2),nb*nb,'ops/ht ',nid)
+            do j=1,nb-nplay
+            do i=1,nb-nplay
+               hlm(i+(j-1)*(nb-nplay),2)=hlm(i+nplay+(j+nplay-1)*nb,2)
+            enddo
+            enddo
+            if (.not.ifcomb) then
+               if (ifdecpl) then
+                  call copy(hinv(1,2),hlm(1,2),(nb-nplay)**2)
+                  call diag(hinv(1,2),wt(1,2),rhs(1,2),nb)
+               else
+                  call invmat(hinv(1,2),hlu(1,2),hlm(1,2),
+     $            ihlu(1,2),ihlu2(1,2),nb-nplay)
+                  call rzero(wt(1,2),(nb-nplay)**2)
+                  do i=1,nb-nplay
+                     wt(i+(nb-nplay)*(i-1),2)=1.
+                  enddo
+               endif
+            endif
+            lu_time=lu_time+dnekclock()-ttime
+            call update_k(uk,ukp,tk,tkp)
+         endif
+
+         call rom_userfop
+
+         call setr_t(rhs(1,2),icount)
+         call rom_userrhs(rhs(1,2))
+
+         ttime=dnekclock()
+         if (.not.ifcomb) then
+         if (isolve.eq.0) then
+            call mxm(wt(1,2),nb,rhs(1,2),nb,rhstmp(1),1)
+            call mxm(hinv(1,2),nb,rhstmp(1),nb,rhs(1,2),1)
+            if (ifdecpl) then
+            eps=1.e-3
+            do i=1,nb
+               if (rhs(i,2).gt.tpmax(i)) rhs(i,2)=tpmax(i)-tpdis(i)*eps
+               if (rhs(i,2).lt.tpmin(i)) rhs(i,2)=tpmin(i)+tpdis(i)*eps
+            enddo
+            endif
+            call mxm(rhs(1,2),1,wt(1,2),nb,rhstmp(1),nb)
+            call copy(rhs(1,2),rhstmp(1),nb)
+         else
+            scopt='tcopt'
+            call mxm(ut,nb+1,ad_alpha(1,icount),icount,utmp1,1)
+            call mxm(wt(1,2),nb,utmp1(1),nb,utmp2(1),1)
+            eps=1.e-3
+            do i=1,nb
+               if (utmp2(i).gt.tpmax(i)) utmp2(i)=tpmax(i)-tpdis(i)*eps
+               if (utmp2(i).lt.tpmin(i)) utmp2(i)=tpmin(i)+tpdis(i)*eps
+            enddo
+            call mxm(wt(1,2),nb,rhs(1,2),nb,rhstmp(1),1)
+            call constrained_POD(rhstmp,hlm(1,2),hinv(1,2),utmp2(1),
+     $                           tpmax,tpmin,tpdis,
+     $                           tbarr0,tbarrseq,tcopt_count)
+            call mxm(rhstmp(1),1,wt(1,2),nb,rhs(1,2),nb)
+         endif
+
+         if (cfloc.eq.'POST') then
+         if (cftype.eq.'TFUN') then
+            call pod_proj(rhs(1,2),rbf,nb,'step  ')
+         else if (cftype.eq.'DIFF') then
+            call pod_df(rhs(1,2))
+         endif
+         endif
+
+         tsolve_time=tsolve_time+dnekclock()-ttime
+         endif
+      endif
+
+      ! EDIT BELOW HERE (temperature above)
+
+      if (mod(ad_step,iostep).eq.0) write(*,*) 'ad_step', ad_step
+
+      call copy(utmp3, u, (lub+1)*5)
+      
+      ifield=1
+      if (ifrom(1)) then
+         if (ad_step.le.3) then
+            ttime=dnekclock()
+            call seth(hlm,au,bu,1./ad_re)
+            call outmatb(hlm,nb,nb,'hlm   ',ad_step)
+            if (ifedvs) then
+               edv(0) = 1
+               edv(1) = 1
+               call addeddy(hlm,cedm,cedvec,cedd,edv)
+            endif
+            if (ad_step.eq.3) call dump_serial(hlm,nb*nb,'ops/hu ',nid)
+            do j=1,nb-nplay
+            do i=1,nb-nplay
+               hlm(i+(j-1)*(nb-nplay),1)=hlm(i+nplay+(j+nplay-1)*nb,1)
+            enddo
+            enddo
+            if (nio.eq.0) write (6,*) 'check ifdecpl',ifdecpl,'cp3'
+            if (.not.ifcomb) then
+               if (ifdecpl) then
+                  call copy(hinv,hlm,(nb-nplay)**2)
+                  call diag(hinv,wt,rhs(1,1),nb)
+               else
+                  call invmat(hinv,hlu,hlm,ihlu,ihlu2,nb-nplay)
+               if (nio.eq.0) write (6,*) 'check nplay',nplay,'cp3'
+                  call rzero(wt,(nb-nplay)**2)
+                  do i=1,nb-nplay
+                     wt(i+(nb-nplay)*(i-1),1)=1.
+                  enddo
+               endif
+            endif
+            lu_time=lu_time+dnekclock()-ttime
+            call update_k(uk,ukp,tk,tkp)
+         endif
+
+         call rom_userfop
+
+         call setr_v_mhd(rhs(1,1),icount)
+
+         call rom_userrhs(rhs(1,1))
+
+         ttime=dnekclock()
+         if (.not.ifcomb) then
+         if ((isolve.eq.0).or.(icopt.eq.2)) then ! standard matrix inversion
+            call mxm(wt,nb,rhs(1,1),nb,rhstmp(1),1)
+            call mxm(hinv,nb,rhstmp(1),nb,rhs(1,1),1)
+            if (ifdecpl) then
+               eps=1.e-3
+               do i=1,nb
+                  if (rhs(i,1).gt.upmax(i)) rhs(i,1)=upmax(i)-updis(i)*eps
+                  if (rhs(i,1).lt.upmin(i)) rhs(i,1)=upmin(i)+updis(i)*eps
+               enddo
+            endif
+            call mxm(rhs(1,1),1,wt,nb,rhstmp(1),nb)
+            call copy(rhs(1,1),rhstmp(1),nb)
+         else 
+            scopt='ucopt'
+            call mxm(u,nb+1,ad_alpha(1,icount),icount,utmp1,1)
+            call mxm(wt,nb,utmp1(1),nb,utmp2(1),1)
+            eps=1.e-3
+            do i=1,nb
+               if (utmp2(i).gt.upmax(i)) utmp2(i)=upmax(i)-updis(i)*eps
+               if (utmp2(i).lt.upmin(i)) utmp2(i)=upmin(i)+updis(i)*eps
+            enddo
+            call mxm(wt,nb,rhs(1,1),nb,rhstmp(1),1)
+            call constrained_POD(rhstmp,hlm,hinv,utmp2(1),upmax,upmin,
+     $                           updis,ubarr0,ubarrseq,ucopt_count)
+            call mxm(rhstmp(1),1,wt,nb,rhs(1,1),nb)
+
+         endif
+         endif
+
+         if (cfloc.eq.'POST') then
+         if (cftype.eq.'TFUN') then
+            call pod_proj(rhs(1,1),rbf,nb,'step  ')
+         else if (cftype.eq.'DIFF') then
+            call pod_df(rhs(1,1))
+         endif
+         endif
+
+         solve_time=solve_time+dnekclock()-ttime
+      endif
+
+      if (ifcomb) then
+         if (ad_step.le.3) then
+            call add2(hlm(1,1),hlm(1,2),(nb+1)**2)
+            if (ifdecpl) then
+               call copy(hinv(1,1),hlm(1,1),(nb-nplay)**2)
+               call diag(hinv(1,1),wt(1,1),utmp1,nb)
+            else
+               call invmat(hinv(1,1),hlu(1,1),hlm(1,1),
+     $         ihlu(1,1),ihlu2(1,1),nb-nplay)
+               call rzero(wt(1,1),(nb-nplay)**2)
+               do i=1,nb-nplay
+                  wt(i+(nb-nplay)*(i-1),1)=1.
+               enddo
+            endif
+         endif
+         call add2(rhs(1,1),rhs(1,2),(nb+1)**2)
+
+         call mxm(wt,nb,rhs(1,1),nb,rhstmp(1),1)
+         call mxm(hinv,nb,rhstmp(1),nb,rhs(1,1),1)
+         if (ifdecpl) then
+            do i=1,nb
+               if (rhs(i,1).gt.upmax(i)) rhs(i,1)=upmax(i)-updis(i)*eps
+               if (rhs(i,1).lt.upmin(i)) rhs(i,1)=upmin(i)+updis(i)*eps
+            enddo
+         endif
+         call mxm(rhs(1,1),1,wt,nb,rhstmp(1),nb)
+         call copy(rhs(1,1),rhstmp(1),nb)
+         call copy(rhs(1,2),rhs(1,1),nb)
+      endif
+
+      if (cfloc.eq.'POST'.and.cftype.eq.'POLY')
+     $   call apply_les_imp(rhs(0,1),rhs(0,2),rdft,fles1,fles2,rtmp1)
+
+      if (ifrom(2)) call shift(ut,rhs(0,2),nb+1,5)
+      if (ifrom(1)) call shift(u,rhs,nb+1,5)
+
+      call copy(utmp4, u, (lub+1)*5)
+      call copy(u, utmp3, (lub+1)*5)
+      call copy(rhstmp1(1,1), rhs(1,1), lb)
+      call copy(rhs(1,1), rhsb(1,1), lb)
+
+      ! B-FIELD
+
+      ifield=ifldmhd
+      if (ifrom(ifldb)) then
+         if (ad_step.le.3) then
+            ttime=dnekclock()
+            call seth(hlmb,abu,bbu,1./ad_mag)
+            if (ifedvs) then
+               edv(0) = 1
+               edv(1) = 1
+               call addeddy(hlmb,cedm,cedvec,cedd,edv)
+            endif
+            if (ad_step.eq.3) call dump_serial(hlmb,nb*nb,'ops/hb ',nid)
+            do j=1,nb-nplay
+            do i=1,nb-nplay
+               hlmb(i+(j-1)*(nb-nplay),1)=hlmb(i+nplay+(j+nplay-1)*nb,1)
+            enddo
+            enddo
+            if (nio.eq.0) write (6,*) 'check ifdecpl',ifdecpl,'cp3'
+            if (.not.ifcomb) then
+               if (ifdecpl) then
+                  call copy(hinvb,hlmb,(nb-nplay)**2)
+                  call diag(hinvb,wt,rhs(1,1),nb)
+               else
+                 call invmat(hinvb,hlub,hlmb,ihlub,ihlu2b,nb-nplay)
+               if (nio.eq.0) write (6,*) 'check nplay',nplay,'cp3'
+                  call rzero(wt,(nb-nplay)**2)
+                  do i=1,nb-nplay
+                    wt(i+(nb-nplay)*(i-1),1)=1.
+                  enddo
+               endif
+            endif
+            lu_time=lu_time+dnekclock()-ttime
+            call update_k(bk,bkp,tk,tkp)
+            call update_hyper_mhd(bkp)
+         endif
+
+         call rom_userfop
+
+         call setr_v_mhd2(rhs(1,1),icount)
+
+         call rom_userrhs(rhs(1,1))
+
+         if (.not.ifcomb) then
+         if ((isolve.eq.0).or.(icopt.eq.2)) then ! standard matrix inversion
+            call mxm(wt,nb,rhs(1,1),nb,rhstmp(1),1)
+            call mxm(hinvb,nb,rhstmp(1),nb,rhs(1,1),1)
+            if (ifdecpl) then
+               eps=1.e-3
+               do i=1,nb
+                  if (rhs(i,1).gt.bpmax(i)) rhs(i,1)=bpmax(i)-bpdis(i)*eps
+                  if (rhs(i,1).lt.bpmin(i)) rhs(i,1)=bpmin(i)+bpdis(i)*eps
+               enddo
+            endif
+            call mxm(rhs(1,1),1,wt,nb,rhstmp(1),nb)
+            call copy(rhs(1,1),rhstmp(1),nb)
+         else 
+            scopt='ucopt'
+            call mxm(b,nb+1,ad_alpha(1,icount),icount,utmp1,1)
+            call mxm(wt,nb,utmp1(1),nb,utmp2(1),1)
+            eps=1.e-3
+            do i=1,nb
+               if (utmp2(i).gt.bpmax(i)) utmp2(i)=bpmax(i)-bpdis(i)*eps
+               if (utmp2(i).lt.bpmin(i)) utmp2(i)=bpmin(i)+bpdis(i)*eps
+            enddo
+            call mxm(wt,nb,rhs(1,1),nb,rhstmp(1),1)
+            call constrained_POD(rhstmp,hlmb,hinvb,utmp2(1),bpmax,bpmin,
+     $                           bpdis,ubarr0,ubarrseq,ucopt_count)
+            call mxm(rhstmp(1),1,wt,nb,rhs(1,1),nb)
+
+         endif
+         endif
+         if (ifrom(ifldb)) call shift(b,rhs,nb+1,5)
+
+
+      endif
+
+      call copy(u, utmp4, (lub+1)*5)
+      call copy(rhsb(1,1), rhs(1,1), lb)
+      call copy(rhs(1,1), rhstmp1(1,1), lb)
+      
 
       ifield=jfield
 
@@ -326,6 +660,10 @@ c        call cubar
 
             ifto = .true. ! turn on temp in fld file
             call outpost(vx,vy,vz,pavg,vort,'rom')
+            if (ifrom(ifldb)) then
+               call reconb(bx,by,bz,b)
+               call outpost(bx,by,bz,pr,t,'romb')
+            endif
             istep=jstep
          endif
       endif
@@ -681,21 +1019,6 @@ c-----------------------------------------------------------------------
          call add2(tmp1(1),rf(1),nb)
       endif
 
-      ! Add time-relaxation term
-      if (regtype.eq.'TR   ') then
-         call copy(tmp2,u,nb+1)
-         ! Filter velocity coefficients
-         if (cftype.eq.'TFUN') then
-            call pod_proj(tmp2(1),rbf,nb,'step  ')
-         else if (cftype.eq.'DIFF') then
-            call pod_df(tmp2(1))
-         endif
-
-         ! compute velocity fluctuation
-         call sub3(rf,u(1),tmp2(1),nb)
-         call add2s2(tmp1(1),rf,-1.0*relax,nb)
-      endif
-
       call shift(fu,tmp1(1),nb,3)
 
 
@@ -748,6 +1071,141 @@ c              tmp2(i)=log(d)
 
          call addcol3(rhs,tmp1(1),tmp2(1),nb)
       endif
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine setr_v_mhd(rhs,icount)
+
+      include 'SIZE'
+      include 'MOR'
+
+      common /scrrhs/ tmp1(0:lb),tmp2(0:lb)
+      common /eddyma/ cedm((lb**2-1)*ledvis+1),cedvec((lb-1)*ledvis+1)
+
+      real rhs(nb)
+
+      call mxm(u,nb+1,ad_beta(2,icount),3,tmp1,1)
+      call mxm(bu,nb,tmp1(1),nb,rhs,1)
+
+      call cmult(rhs,-1.0/ad_dt,nb)
+
+      s=-1.0/ad_re
+
+      do i=1,nb
+         rhs(i)=rhs(i)+s*au0(1+i)
+      enddo
+
+      
+      if (ifedvs) then
+         do i=1,nb
+            rhs(i)=rhs(i)-cedvec(i)
+         enddo
+      endif
+
+      if (ifcp) then    ! not using this yet for mhd
+         if (ifcore) then 
+            call evalc4(tmp1(1),cua,cub,cuc,cp_uw,cul,cuj0,cu0k,u)
+         else
+            call evalc3(tmp1(1),cua,cub,cuc,cp_uw,u)
+         endif 
+      else        ! changed code is here
+         call evalc(tmp1(1),ctmp,cul,u,u)
+         call evalc(tmp2(1),ctmp,cbl,b,b)
+      endif
+
+
+      call chsign(tmp1(1),nb)
+      if (ifmhdcrossterms) call add2(tmp1(1),tmp2(1),nb)
+
+      if (ifbuoy) then
+         call mxm(buxt0,nb+1,ut,nb+1,tmp2(0),1)
+         call add2s2(tmp1(1),tmp2(1),-gx,nb)
+
+         call mxm(buyt0,nb+1,ut,nb+1,tmp2(0),1)
+         call add2s2(tmp1(1),tmp2(1),-gy,nb)
+
+         if (ldim.eq.3) then
+            call mxm(buzt0,nb+1,ut,nb+1,tmp2(0),1)
+            call add2s2(tmp1(1),tmp2(1),-gz,nb)
+         endif
+      else if (ifforce) then
+         call add2(tmp1(1),rf(1),nb)
+      endif
+
+      
+
+      call shift(fu,tmp1(1),nb,3)
+      call mxm(fu,nb,ad_alpha(1,icount),3,tmp1(1),1)
+      call add2(rhs,tmp1(1),nb)
+
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine setr_v_mhd2(rhs,icount)
+
+      include 'SIZE'
+      include 'MOR'
+
+      common /scrrhsb/ tmp3(0:lb),tmp4(0:lb)
+      common /eddyma/ cedm((lb**2-1)*ledvis+1),cedvec((lb-1)*ledvis+1)
+
+      real rhs(nb)
+
+      call mxm(b,nb+1,ad_beta(2,icount),3,tmp3,1)
+      call mxm(bbu,nb,tmp3(1),nb,rhs,1)
+
+      call cmult(rhs,-1.0/ad_dt,nb)
+
+      s=-1.0/ad_mag
+
+      do i=1,nb
+         rhs(i)=rhs(i)+s*ab0(1+i)
+      enddo
+
+      if (ifedvs) then
+         do i=1,nb
+            rhs(i)=rhs(i)-cedvec(i)
+         enddo
+      endif
+
+      if (ifcp) then    ! not using this yet for mhd
+         if (ifcore) then 
+            call evalc4(tmp3(1),cua,cub,cuc,cp_uw,cul,cuj0,cu0k,u)
+         else
+            call evalc3(tmp3(1),cua,cub,cuc,cp_uw,u)
+         endif 
+      else        ! changed code is here
+         call evalc(tmp3(1),ctmpb,cubl,u,b)
+         call evalc(tmp4(1),ctmpb,cbul,b,u)
+      endif
+
+
+      call chsign(tmp3(1),nb)
+      if (ifmhdcrossterms) call add2(tmp3(1),tmp4(1),nb)
+
+
+      if (ifbuoy) then
+         call mxm(buxt0,nb+1,ut,nb+1,tmp4(0),1)
+         call add2s2(tmp3(1),tmp4(1),-gx,nb)
+
+         call mxm(buyt0,nb+1,ut,nb+1,tmp4(0),1)
+         call add2s2(tmp3(1),tmp4(1),-gy,nb)
+
+         if (ldim.eq.3) then
+            call mxm(buzt0,nb+1,ut,nb+1,tmp4(0),1)
+            call add2s2(tmp3(1),tmp4(1),-gz,nb)
+         endif
+      else if (ifforce) then
+         call add2(tmp3(1),rf(1),nb)
+      endif
+
+
+      call shift(fb,tmp3(1),nb,3)
+      call mxm(fb,nb,ad_alpha(1,icount),3,tmp3(1),1)
+      call add2(rhs,tmp3(1),nb)
+
 
       return
       end
@@ -1550,3 +2008,20 @@ c-----------------------------------------------------------------------
 
       return
       end
+c-----------------------------------------------------------------------
+      subroutine outmatb(a,m,n,name6,ie)
+
+      real a(m,n)
+      character*6 name6
+c     
+      write(6,*)
+      write(6,*) ie,' matrix: ',name6,m,n
+      n6 = min(n,6)
+      do i=1,m
+         write(6,6) ie,name6,(a(i,j),j=1,n6)
+      enddo
+    6 format(i3,1x,a6,1p6e12.4)
+      write(6,*)
+      return
+      end
+c-----------------------------------------------------------------------

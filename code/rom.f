@@ -7,7 +7,7 @@ c-----------------------------------------------------------------------
       include 'TOTAL'
       include 'MOR'
 
-      integer icalld
+      integer icalld, icalldmhd, z
       save    icalld
       data    icalld /0/
 
@@ -16,12 +16,16 @@ c-----------------------------------------------------------------------
       parameter (lt=lx1*ly1*lz1*lelt)
 
       common /romup/ rom_time
+      common /mhdflag/ icalldmhd
 
       stime=dnekclock()
+
+      ! TODO: work for lbb != lub
 
       if (icalld.eq.0) then
          rom_time=0.
          icalld=1
+         icalldmhd=0
          call rom_setup
          if (ifcp) call cp_setup
       endif
@@ -38,7 +42,11 @@ c-----------------------------------------------------------------------
          if (ifflow) call exitti(
      $   'error: running rom_update with ifflow = .true.$',nelv)
          if (istep.gt.0) then
-            call bdfext_step
+            if (ifrom(ifldb)) then
+               call bdfext_step_mhd
+            else
+               call bdfext_step
+            end if
             call post
             call reconv(vx,vy,vz,u) ! reconstruct velocity to be used in h-t
          endif
@@ -66,8 +74,23 @@ c        cts='rkck  '
          call rom_userchk
          ad_step=1
          do i=1,ad_nsteps
+
+            if (mod(ad_step,iostep).eq.0) then 
+               do z=0,nb
+                  if (nio.eq.0) write (6,*) 'b',b(z)
+               enddo
+
+               do z=0,nb
+                  if (nio.eq.0) write (6,*) 'u',u(z)
+               enddo
+            endif
+
             if (cts.eq.'bdfext') then
-               call bdfext_step
+               if (ifrom(ifldb)) then
+                  call bdfext_step_mhd
+               else
+                  call bdfext_step
+               end if
                time=time+ad_dt
                call post
             else if (cts.eq.'copt  ') then
@@ -109,10 +132,16 @@ c        cts='rkck  '
 
                   call reconv(vx,vy,vz,u)
                   call recont(t,ut)
+                  if (ifrom(ifldb)) call reconb(bx,by,bz,b)
 
                   ifto = .true. ! turn on temp in fld file
-                  if (rmode.ne.'ON ')
-     $               call outpost(vx,vy,vz,pr,t,'rom')
+                  if (rmode.ne.'ON ') then
+                     call outpost(vx,vy,vz,pr,t,'rom')
+                     if (ifrom(ifldb)) then
+                        write(*,*) 'ROM HERE', ''
+                        call outpost(bx,by,bz,pr,t,'romb')
+                     endif
+                  endif
                endif
 
                if (cts.eq.'rkck'.and.rktol.ne.0.) then
@@ -152,6 +181,16 @@ c        call cres
 
     1 format(i8,1p4e13.5,' err')
     3 format(i8,1p4e15.7,' modt')
+
+      do i=0,nb
+         if (nio.eq.0) write (6,*) 'b',b(i)
+      enddo
+
+      do i=0,nb
+         if (nio.eq.0) write (6,*) 'u',u(i)
+      enddo
+
+
 
       return
       end
@@ -195,6 +234,72 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+      subroutine rom_setup_params
+
+      include 'SIZE'
+      include 'SOLN'
+      include 'MOR'
+      include 'AVG'
+      include 'INPUT'
+
+      logical iftmp,ifexist
+      integer num_ts
+
+      num_ts=1
+
+      
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine rom_setup_mhd
+
+      include 'SIZE'
+      include 'SOLN'
+      include 'MOR'
+      include 'AVG'
+      include 'INPUT'
+
+      common /mhdflag/ icalldmhd
+
+      if (nio.eq.0) write (6,*) 'inside rom_setup_mhd'
+
+      icalldmhd=1
+
+      !TODO check on this one
+c      call mor_set_params_uni_pre
+      call mor_init_fields
+      call mor_set_params_uni_post
+
+      if (ifsetbases) call setbases
+      call rom_userbases
+
+      if (rmode.eq.'ALL'.or.rmode.eq.'OFF'.or.rmode.eq.'AEQ') then
+         call dump_bas
+      endif
+
+      ubdim = lx1*ly1*lz1*lelm
+
+      ! TODO: fix copy
+
+      call copy(bs0,us0,lx1*ly1*lz1*lelm*ldim*lsu)
+
+      do i=1,ubdim
+      do j=0,lub
+         bxb(i,j) = ub(i,j)
+         byb(i,j) = vb(i,j)
+         bzb(i,j) = wb(i,j)
+      do k=0,ldim
+         bxyzb(i,k,j) = uvwb(i,k,j)
+      enddo
+      enddo
+      enddo
+
+      icalldmhd=2
+
+      return
+      end
+c-----------------------------------------------------------------------
       subroutine rom_setup
 
       ! set rom ic, ops, qoi, etc.
@@ -206,7 +311,7 @@ c-----------------------------------------------------------------------
       include 'INPUT'
 
       logical iftmp,ifexist
-      integer num_ts
+      integer num_ts, ubdim
 
       num_ts=1
 
@@ -231,8 +336,11 @@ c-----------------------------------------------------------------------
       if (nid.eq.0) write (6,*) 'post par rea'
       call mor_show_params
       if (nid.eq.0) write (6,*) 'post show params'
-
+      
       call mor_set_params_uni_pre
+
+      if (ifrom(ifldb)) call rom_setup_mhd
+
       call mor_init_fields
       call mor_set_params_uni_post
 
@@ -247,10 +355,11 @@ c     call average_in_xy
 c     call average_in_y
       call setops
       call setu
+      if (ifrom(ifldb)) call setb_ic
 
       call setf
 
-      call setqoi
+c      call setqoi
       call setmisc
 
       if (ifei) then
@@ -361,9 +470,24 @@ c-----------------------------------------------------------------------
       if (ifrom(1)) then
          ifield=1
          call seta(au,au0,'ops/au ')
+         if (ifrom(ifldb)) then
+            call seta_mhd(abu,ab0,'ops/ab ')
+         endif
          if (rmode.eq.'AEQ') call setae(aue,'ops/aue ')
          call setb(bu,bu0,'ops/bu ')
+         if (ifrom(ifldb)) then
+            call setb_mhd(bbu,bb0,'ops/bb ')
+         endif
          call setc(cul,'ops/cu ')
+         if (ifrom(ifldb)) then
+            call setc_mhd(cul,cbl,cubl,cbul
+     $                    ,'ops/cuu', 'ops/cbb', 'ops/cub', 'ops/cbu')
+            if (ifmhdfixskew) call fix_skew_mhd
+            call dump_serial(cul,ncloc,'ops/cuu ',nid)
+            call dump_serial(cbl,ncloc,'ops/cbb ',nid)
+            call dump_serial(cbul,ncloc,'ops/cbu ',nid)
+            call dump_serial(cubl,ncloc,'ops/cub ',nid)
+         endif
       endif
       if (ifrom(2)) then
          ifield=2
@@ -575,6 +699,61 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+      subroutine update_hyper_mhd(bbkp)
+
+      ! update hyper parameters
+
+      ! bbkp := transformed velocity coefficient set
+
+      include 'SIZE'
+      include 'MOR'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+
+      real bbkp(0:nb,ns)
+
+      real ep
+
+      call nekgsync
+      hpar_time=dnekclock()
+
+      ! eps is the free parameter
+      ! 1e-2 is used in the paper
+      ep = 1.e-2
+
+      n  = lx1*ly1*lz1*nelt
+      if (ifpod(ifldb)) then
+         call cfill(bpmin,1.e9,nb)
+         call cfill(bpmax,-1.e9,nb)
+         do j=1,ns
+         do i=1,nb
+            if (bbkp(i,j).lt.bpmin(i)) bpmin(i)=bbkp(i,j)
+            if (bbkp(i,j).gt.bpmax(i)) bpmax(i)=bbkp(i,j)
+         enddo
+         enddo
+         do j=1,nb                    ! compute hyper-parameter
+            d= bpmax(j)-bpmin(j)
+            bpmin(j) = bpmin(j) - ep * d
+            bpmax(j) = bpmax(j) + ep * d
+            if (nio.eq.0) write (6,*) j,bpmin(j),bpmax(j),'bpminmax'
+         enddo
+
+         ! compute distance between bmax and bmin
+         call sub3(bpdis,bpmax,bpmin,nb)
+
+         if (nio.eq.0) then
+            do i=1,nb
+               write (6,*) i,bpdis(i),'bpdis'
+            enddo
+         endif
+      endif   
+
+      call nekgsync
+      if (nio.eq.0) write (6,*) 'hpar_time',dnekclock()-hpar_time
+
+      return
+      end
+c-----------------------------------------------------------------------
       subroutine setmisc
 
       ! set miscellaneous quantities
@@ -592,6 +771,7 @@ c-----------------------------------------------------------------------
 
          if (ifpod(1)) call p2k(uk,us0,uvwb,ndim,ukp)
          if (ifpod(2)) call p2k(tk,ts0(1,1,1),tb(1,0,1),1,tkp)
+         if (ifpod(ifldb))  call p2k(bk,bs0,bxyzb,ndim,bkp)
          if (ifedvs)   call p2k(edk,ts0(1,1,4),tb(1,0,4),1,ukp)
 
          call nekgsync
@@ -604,11 +784,18 @@ c-----------------------------------------------------------------------
          inquire (file='ops/tk',exist=ifexist)
          if (ifexist)
      $      call read_mat_serial(tk,nb+1,ns,'ops/tk ',mb+1,nns,stmp,nid)
+         
+         inquire (file='ops/bk',exist=ifexist)
+         if (ifexist)
+     $      call read_mat_serial(bk,nb+1,ns,'ops/bk ',mb+1,nns,stmp,nid)
+     
       endif
 
       if (ifpod(1)) call copy(ukp,uk,(nb+1)*ns)
       if (ifpod(2)) call copy(tkp,tk,(nb+1)*ns)
+      if (ifpod(ifldb)) call copy(bkp,bk,(nb+1)*ns)
 
+      !TODO check what this is
       call asnap(uk,tk)
       call hyperpar(uk,tk)
 
@@ -652,6 +839,7 @@ c-----------------------------------------------------------------------
       ad_dt = dt
       ad_re = 1/param(2)
       ad_pe = 1/param(8)
+      ad_mag = 1/param(29)
 
       ifavg0=.false.
 
@@ -670,7 +858,7 @@ c-----------------------------------------------------------------------
       ifquad=.false.
       ifsetbases=.true.
 
-      do i=0,ldimt1
+      do i=0,ldimt3
          ifpod(i)=.false.
          ifrom(i)=.false.
       enddo
@@ -709,10 +897,8 @@ c-----------------------------------------------------------------------
 
       cfloc='NONE'
       cftype='NONE'
-      regtype='NONE '
       rbf=0.5
       rdft=0.5
-      relax=0.0
 
       gx=0.
       gy=0.
@@ -830,6 +1016,7 @@ c-----------------------------------------------------------------------
 c     ifrom(1)=(ifpod(1).and.eqn.ne.'ADE')
       ifrom(1)=ifpod(1)
       ifrom(2)=ifpod(2)
+      ifrom(ifldb)=ifpod(ifldb)
 
       ifpod(1)=ifpod(1).or.ifrom(2)
 
@@ -999,10 +1186,10 @@ c-----------------------------------------------------------------------
          write (6,*) 'mp_ifcore     ',ifcore
          write (6,*) 'mp_ifquad     ',ifquad
          write (6,*) ' '
-         do i=0,ldimt1
+         do i=0,ldimt3
             write (6,*) 'mp_ifpod(',i,')   ',ifpod(i)
          enddo
-         do i=0,ldimt1
+         do i=0,ldimt3
             write (6,*) 'mp_ifrom(',i,')   ',ifrom(i)
          enddo
          write (6,*) ' '
@@ -1022,13 +1209,12 @@ c-----------------------------------------------------------------------
          write (6,*) 'mp_cftype      ',cftype
          write (6,*) 'mp_rbf         ',rbf
          write (6,*) 'mp_rdft        ',rdft
-         write (6,*) 'mp_relax       ',relax
-         write (6,*) ' '
-         write (6,*) 'mp_regularization ',regtype
          write (6,*) ' '
          write (6,*) 'mp_navg_step   ',navg_step
          write (6,*) 'mp_rk_tol      ',rk_tol
          write (6,*) 'mp_iftneu      ',iftneu
+         write (6,*) 'mhd do cross terms      ',ifmhdcrossterms
+         write (6,*) 'mhd do fix skew      ',ifmhdfixskew
       endif
 
       return
@@ -1048,6 +1234,8 @@ c-----------------------------------------------------------------------
       logical alist,iftmp
 
       character*128 fname1
+      
+      common /mhdflag/ icalldmhd
 
       if (nio.eq.0) write (6,*) 'inside rom_init_fields'
 
@@ -1066,17 +1254,23 @@ c-----------------------------------------------------------------------
 
       if (ifrom(1)) call opcopy(uic,vic,wic,vx,vy,vz)
       if (ifrom(2)) call copy(tic,t,n)
-
+      if(ifrom(ifldb)) call opcopy(bxic,byic,bzic,bx,by,bz)
       if (rmode.eq.'ALL'.or.rmode.eq.'OFF'.or.rmode.eq.'AEQ') then
-         fname1='file.list '
+         fname1='file.list'
+          if (ifrom(ifldb).and.icalldmhd.eq.1) then
+            fname1='fileb.list'
+         endif
 
-         do i=0,ldimt1
+         do i=0,ldimt3
             ifreads(i)=ifrom(i)
             if (nio.eq.0) write(6,*)'ifreads',ifreads(i)
          enddo
 
          call read_fields(
      $      us0,prs,ts0,ns,ls,nskip,ifreads,timek,fname1,.true.)
+         
+         !TODO: can maybe read b fields in here too
+
          rtmp1(1,1)=1.0*ns
          call dump_serial(rtmp1(1,1),1,'ops/ns ',nid)
 
@@ -1151,12 +1345,22 @@ c        endif
                   call sub2(us0(1,2,i),vb,n)
                   if (ldim.eq.3) call sub2(us0(1,ldim,i),wb,n)
                endif
+              if (ifrom(ifldb)) then
+                 call sub2(bs0(1,1,i),bxb,n)
+                 call sub2(bs0(1,2,i),byb,n)
+                 if (ldim.eq.3) call sub2(bs0(1,ldim,i),bzb,n)
+              endif 
                if (ifrom(2)) call sub2(ts0(1,i,1),tb(1,0,1),n)
                if (ifedvs) call sub2(ts0(1,i,4),tb(1,0,4),n)
             enddo
             call sub2(uavg,ub,n)
             call sub2(vavg,vb,n)
             if (ldim.eq.3) call sub2(wavg,wb,n)
+            if (ifrom(ifldb)) then
+               call sub2(bxavg,bxb,n) ! these are not yet a thing
+               call sub2(byavg,byb,n)
+               if (ldim.eq.3) call sub2(bzavg,bzb,n)
+            endif
             if (ifpod(2)) call sub2(tavg,tb(1,0,1),n)
             if (ifedvs) call sub2(tavg(1,1,1,1,4),tb(1,0,4),n)
          endif
@@ -1243,6 +1447,180 @@ c        endif
       ifield=jfield
 
       if (nio.eq.0) write (6,*) 'exiting rom_init_fields'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine setc_mhd(cuul, cbbl, cuubl, cbbul, fn1, fn2, fn3, fn4)
+
+      include 'SIZE'
+      include 'MOR'
+      include 'TOTAL'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+      parameter (ltd=lxd*lyd*lzd*lelt)
+
+      integer lxy
+      integer nd
+
+      real udu(lx1*ly1*lz1*lelt,ldim)
+      real bdb(lx1*ly1*lz1*lelt,ldim)
+      real bdu(lx1*ly1*lz1*lelt,ldim)
+      real udb(lx1*ly1*lz1*lelt,ldim)
+      
+      common /convectb/ bc1v(ltd),bc2v(ltd),bc3v(ltd)
+     $                 ,bu1v(ltd),bu2v(ltd),bu3v(ltd)
+      common /convect/ c1v(ltd),c2v(ltd),c3v(ltd)
+     $                 ,u1v(ltd),u2v(ltd),u3v(ltd)
+      common /convect_all/ u1va(ltd,0:lb),u2va(ltd,0:lb),u3va(ltd,0:lb)
+      common /convect_allb/ bu1va(ltd,0:lb),bu2va(ltd,0:lb)
+     $                     ,bu3va(ltd,0:lb)
+      
+
+      character*128 fn1, fn2, fn3, fn4
+      character*128 fnlint
+
+      lxy = lx1*ly1*lz1*lelt
+      nd=lxd*lyd*lzd*nelv
+
+      !call lints(fnlint,fn1,128)
+      !if (nid.eq.0) open (unit=100,file=fnlint)
+      !call lints(fnlint,fn2, 128)
+      !if (nid.eq.0) open (unit=101,file=fnlint)
+      !call lints(fnlint,fn3,128)
+      !if (nid.eq.0) open (unit=102,file=fnlint)
+      !call lints(fnlint,fn4,128)
+      !if (nid.eq.0) open (unit=103,file=fnlint)
+
+      write(*,*) 'inside setc_mhd', ''
+
+      call cpart(kc1,kc2,jc1,jc2,ic1,ic2,ncloc,nb,np,nid+1)
+
+   !  setup bases for convection
+      do i=0, nb
+         call setcnv_u(ub(1,i),vb(1,i),wb(1,i))
+         call copy(u1va(1,i),u1v, nd)
+         call copy(u2va(1,i),u2v,nd)
+         if (ldim.eq.3) call copy(u3va(1,i),u3v,nd)
+
+         call setcnv_bu(bxb(1,i),byb(1,i),bzb(1,i))
+         call copy(bu1va(1,i),bu1v,nd)
+         call copy(bu2va(1,i),bu2v,nd)
+         if (ldim.eq.3) call copy(bu3va(1,i),bu3v,nd)
+      enddo
+
+
+      !TODO: adjust for loop for lbb != lub
+      
+      do k=0,nb
+         call setcnv_c(ub(1,k),vb(1,k),wb(1,k))
+         call setcnv_bc(bxb(1,k),byb(1,k),bzb(1,k))
+      do j=0,nb
+      
+      call copy(u1v,u1va(1,j),nd)
+      call copy(u2v,u2va(1,j),nd)
+      if (ldim.eq.3) call copy(u3v,u3va(1,j),nd)
+
+      ! udu
+      call convect_new(udu(1,1), u1v,.true.
+     $                       ,c1v,c2v,c3v,.true.)
+      call convect_new(udu(1,2), u2v,.true. 
+     $                       ,c1v,c2v,c3v,.true.)
+      call convect_new(udu(1,3), u3v,.true. 
+     $                       ,c1v,c2v,c3v,.true.)
+
+      call copy(bu1v,bu1va(1,j),ltd)
+      call copy(bu2v,bu2va(1,j),ltd)
+
+      ! bdb
+      if (ldim.eq.3) call copy(bu3v,bu3va(1,j),ltd)
+
+      call convect_new(bdb(1,1), bu1v,.true.
+     $                       ,bc1v,bc2v,bc3v,.true.)
+      call convect_new(bdb(1,2), bu2v,.true. 
+     $                       ,bc1v,bc2v,bc3v,.true.)
+      call convect_new(bdb(1,3), bu3v,.true. 
+     $                       ,bc1v,bc2v,bc3v,.true.)
+
+      ! udb
+           call convect_new(udb(1,1), bu1v,.true.
+     $                       ,c1v,c2v,c3v,.true.)
+      call convect_new(udb(1,2), bu2v,.true. 
+     $                       ,c1v,c2v,c3v,.true.)
+      call convect_new(udb(1,3), bu3v,.true. 
+     $                       ,c1v,c2v,c3v,.true.)
+
+      ! bdu
+           call convect_new(bdu(1,1), u1v,.true.
+     $                       ,bc1v,bc2v,bc3v,.true.)
+      call convect_new(bdu(1,2), u2v,.true. 
+     $                       ,bc1v,bc2v,bc3v,.true.)
+      call convect_new(bdu(1,3), u3v,.true. 
+     $                       ,bc1v,bc2v,bc3v,.true.)
+
+
+      ! TODO: check dimensions of rtmp5, rtmp6
+
+      call uip(rtmp1,udu,uvwb(1,1,1),nb,0,ndim,nbat,fldtmp)
+      call uip(rtmp4,bdb,uvwb(1,1,1),nb,0,ndim,nbat,fldtmp)
+      call uip(rtmp5,udb,bxyzb(1,1,1),nb,0,ndim,nbat,fldtmp)
+      call uip(rtmp6,bdu,bxyzb(1,1,1),nb,0,ndim,nbat,fldtmp) 
+
+      do i=1,nb
+         call setc_local(cuul,rtmp1(i,1),
+     $                    ic1,ic2,jc1,jc2,kc1,kc2,i,j,k)
+         call setc_local(cbbl,rtmp4(i,1),
+     $                    ic1,ic2,jc1,jc2,kc1,kc2,i,j,k)
+         call setc_local(cuubl,rtmp5(i,1),
+     $                    ic1,ic2,jc1,jc2,kc1,kc2,i,j,k)
+         call setc_local(cbbul,rtmp6(i,1),
+     $                    ic1,ic2,jc1,jc2,kc1,kc2,i,j,k)
+
+      enddo
+      enddo
+      enddo
+
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine fix_skew_mhd
+
+      include 'SIZE'
+      include 'MOR'
+      include 'TOTAL'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+      parameter (ltd=lxd*lyd*lzd*lelt)
+
+      real tmp(nb, nb)
+
+      write(*,*) 'inside fix_skew_mhd', ''
+
+      do i=1, nb+1
+         call transpose(tmp,nb,cul((i-1)*nb*(nb+1) + nb + 1),nb)
+         call cmult(tmp,-1.0,nb*nb)
+         call add2(cul((i-1)*nb*(nb+1) + nb + 1),tmp,nb*nb)
+         call cmult(cul((i-1)*nb*(nb+1) + nb + 1),0.5,nb*nb)
+
+         call transpose(tmp,nb,cubl((i-1)*nb*(nb+1) + nb + 1),nb)
+         call cmult(tmp,-1.0,nb*nb)
+         call add2(cubl((i-1)*nb*(nb+1) + nb + 1),tmp,nb*nb)
+         call cmult(cubl((i-1)*nb*(nb+1) + nb + 1),0.5,nb*nb)
+
+         call transpose(tmp,nb,cbl((i-1)*nb*(nb+1) + nb + 1),nb)
+         call cmult(tmp,-1.0,nb*nb)
+         call add2(cbul((i-1)*nb*(nb+1) + nb + 1),tmp,nb*nb)
+         call cmult(cbul((i-1)*nb*(nb+1) + nb + 1),0.5,nb*nb)
+         call transpose(cbl((i-1)*nb*(nb+1) + nb + 1),nb
+     $                  ,cbul((i-1)*nb*(nb+1) + nb + 1),nb)
+         call cmult(cbl((i-1)*nb*(nb+1) + nb + 1),-1.0,nb*nb)
+      enddo
+
+c      call dump_serial(cul,ncloc,'ops/cuu ',nid)
+c      call dump_serial(cbl,ncloc,'ops/cbb ',nid)
+c      call dump_serial(cbul,ncloc,'ops/cbu ',nid)
+c      call dump_serial(cubl,ncloc,'ops/cub ',nid)
 
       return
       end
@@ -1426,6 +1804,70 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+      subroutine seta_mhd(a,a0,fname)
+
+      ! set diffusion operator A
+
+      ! a     := rom operator A w/o 0th mode interactions
+      ! a0    := rom operator A w/  0th mode interactions
+      ! fname := read target
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'MOR'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+
+      common /scrseta/ wk1(lt)
+
+      real a0(0:nb,0:nb),a(nb,nb)
+
+      character*128 fname
+
+      n=lx1*ly1*lz1*nelt
+
+      if (nio.eq.0) write (6,*) 'inside seta_mhd'
+
+      if (rmode.eq.'ON '.or.rmode.eq.'ONB'.or.rmode.eq.'CP ') then
+         if (nio.eq.0) write (6,*) 'reading a...'
+         call read_mat_serial(a0,nb+1,nb+1,fname,mb+1,nb+1,wk1,nid)
+      else
+         if (nio.eq.0) write (6,*) 'forming a...'
+         if (ifield.eq.2.and.(nelgt.ne.nelvt)) then
+            call copy(vdm1,vdiff(1,1,1,1,2),n)
+            sc=1./param(8)
+            call cmult(vdm1,sc,n)
+         endif
+         do j=0,nb
+            if (nio.eq.0) write (6,*) 'seta: ',j,'/',nb
+            nio=-1
+            do i=0,nb
+               if (ifield.eq.1) then
+                  a0(i,j)=h10vip(bxb(1,i),byb(1,i),bzb(1,i),
+     $                           bxb(1,j),byb(1,j),bzb(1,j))
+               else
+                  if (nelgt.ne.nelvt) then
+                     a0(i,j)=h10sip_vd(tb(1,i,1),tb(1,j,1),vdm1)
+                  else
+                     a0(i,j)=h10sip(tb(1,i,1),tb(1,j,1))
+                  endif
+               endif
+            enddo
+            nio=nid
+         enddo
+      endif
+
+      do j=1,nb
+      do i=1,nb
+         a(i,j)=a0(i,j)
+      enddo
+      enddo
+
+      call dump_serial(ab0,(nb+1)**2,'ops/ab ',nid)
+
+      return
+      end
+c-----------------------------------------------------------------------
       subroutine sets(s0,tt,fname)
 
       include 'SIZE'
@@ -1540,6 +1982,69 @@ c           call cmult(vdm1,sc,n)
          bop(i,j)=b0(i,j)
       enddo
       enddo
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine setb_mhd(bop,b0,fname)
+
+      ! set mass operator B
+
+      ! bop     := rom operator B w/o 0th mode interactions
+      ! b0    := rom operator B w/  0th mode interactions
+      ! fname := read target
+
+      include 'SIZE'
+      include 'TSTEP'
+      include 'MOR'
+      include 'SOLN'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+
+      common /scrread/ tab((lub+1)**2)
+
+      real bop(nb,nb),b0(0:nb,0:nb)
+
+      character*128 fname
+
+      if (nio.eq.0) write (6,*) 'inside setb_mhd'
+
+      if (rmode.eq.'ON '.or.rmode.eq.'ONB'.or.rmode.eq.'CP ') then
+         if (nio.eq.0) write (6,*) 'reading b...'
+         call read_mat_serial(b0,nb+1,nb+1,fname,mb+1,nb+1,tab,nid)
+      else
+         if (ifield.eq.2.and.(nelgt.ne.nelvt)) then
+            call copy(brhom1,vtrans(1,1,1,1,2),n)
+c           sc=1./param(8)
+c           call cmult(vdm1,sc,n)
+         endif
+         if (nio.eq.0) write (6,*) 'forming b...'
+         do j=0,nb
+            if (nio.eq.0) write (6,*) 'setb: ',j,'/',nb
+            nio=-1
+            do i=0,nb
+               if (ifield.eq.1) then      
+                  b0(i,j)=wl2vip(bxb(1,i),byb(1,i),bzb(1,i),
+     $                           bxb(1,j),byb(1,j),bzb(1,j))
+               else        ! shouldn't run
+                  if (nelgt.eq.nelvt) then   
+                     b0(i,j)=wl2sip(tb(1,i,1),tb(1,j,1))
+                  else
+                     b0(i,j)=wl2sip_vd(tb(1,i,1),tb(1,j,1),brhom1)
+                  endif
+               endif
+            enddo
+            nio=nid
+         enddo
+      endif
+
+      do j=1,nb
+      do i=1,nb
+         bop(i,j)=b0(i,j)
+      enddo
+      enddo
+
+      call dump_serial(bb0,(nb+1)**2,'ops/bb ',nid)
 
       return
       end
@@ -1695,6 +2200,108 @@ c-----------------------------------------------------------------------
       endif
 
       if (nio.eq.0) write (6,*) 'exiting setu'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine setb_ic
+
+      ! set initial condition for B field ROM coefficients
+
+      include 'SIZE'
+      include 'SOLN'
+      include 'TSTEP'
+      include 'INPUT'
+      include 'MOR'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+
+      common /scrsetb/ bxx(lt),byy(lt),bzz(lt),bwk(lb+1)
+
+      logical iftmp,ifexist
+
+      if (nio.eq.0) write (6,*) 'inside setb_ic'
+
+      n=lx1*ly1*lz1*nelv
+
+      if (rmode.eq.'ON '.or.rmode.eq.'CP ') then
+         inquire (file='ops/b0',exist=ifexist)
+         if (ifexist) call read_serial(b,nb+1,'ops/b0 ',bwk,nid)
+
+      else
+         jfield=ifield
+
+         if (ifrom(ifldb)) then
+            ifield=1
+            call opsub2(bxic,byic,bzic,bxb,byb,bzb)
+            if (ips.eq.'H10') then
+               call h10pv2b(b,bxic,byic,bzic,bxb,byb,bzb)
+            else if (ips.eq.'HLM') then
+               call hlmpv2b(b,bxic,byic,bzic,bxb,byb,bzb)
+            else
+               call pv2b(b,bxic,byic,bzic,bxb,byb,bzb)
+            endif
+            do i=0,nb
+               if (nio.eq.0) write (6,*) 'b',b(i)
+            enddo
+            if (ifrom(ifldb)) then
+               do i=0,nb
+                  if (nio.eq.0) write (6,*) 'b',b(i)
+               enddo
+            endif
+            call opadd2(bxic,byic,bzic,bxb,byb,bzb)
+         else
+            call rzero(b,(nb+1)*3)
+            b((nb+1)*0)=1.
+            b((nb+1)*1)=1.
+            b((nb+1)*2)=1.
+         endif
+
+         if (rmode.eq.'ALL'.or.rmode.eq.'OFF'.or.rmode.eq.'AEQ')
+     $      call dump_serial(b,nb+1,'ops/b0 ',nid)
+
+        
+
+         ifield=jfield
+
+         if (ifcomb) then
+         !TODO: if combined
+            call opsub2(uic,vic,wic,ub,vb,wb)
+            call sub2(tic,tb,n)
+            call pc2b(u,ut,uic,vic,wic,tic,ub,vb,wb,tb)
+            do i=0,nb
+               if (nio.eq.0) write (6,*) 'u&ut',u(i)
+            enddo
+            call opadd2(uic,vic,wic,ub,vb,wb)
+            call add2(tic,tb,n)
+         endif
+
+         call reconb(bxx,byy,bzz,b)
+
+         iftmp=ifxyo
+         ifxyo=.true.
+         if (ifrecon) call outpost(bxx,byy,bzz,pr,tt,'romb')
+
+         ttime=time
+         jstep=istep
+         time=1.
+         istep=1
+         call outpost(bxic,byic,bzic,pr,tic,'bic')
+         ifxyo=.false.
+         time=2.
+         istep=2
+         call outpost(bxx,byy,bzz,pr,tt,'bic')
+         call opsub2(bxx,byy,bzz,bxic,byic,bzic)
+         time=3.
+         istep=3
+         call outpost(bxx,byy,bzz,pr,tt,'bic')
+         time=ttime
+         istep=jstep
+
+         ifxyo=iftmp
+      endif
+
+      if (nio.eq.0) write (6,*) 'exiting setb_ic'
 
       return
       end
@@ -2123,5 +2730,29 @@ c              call outpost(cux,cuy,cuz,pr,tb(1,k,4),'stt')
 
       if (nio.eq.0) write (6,*) 'exiting seteddy'
 
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine copy2(a,b,nx,ny)
+      real a(1,1),b(1,1)
+
+      do i=1,nx
+      do j=0,ny-1
+         a(i,j)=b(i,j)
+      enddo
+      enddo
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine copy3(a,b,nx,ny,nz)
+      real a(1,1,1),b(1,1,1)
+
+      do i=1,nx
+      do j=1,ny
+      do k=0,nz-1
+         a(i,j,k)=b(i,j,k)
+      enddo
+      enddo
+      enddo
       return
       end
