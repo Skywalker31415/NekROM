@@ -1,0 +1,329 @@
+c-----------------------------------------------------------------------
+      subroutine uservp(i,j,k,eg) ! set variable properties
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      integer e,eg
+     
+c     e = gllel(eg)
+
+      udiff  = 1.0  ! This is the same for both U and B fields
+      utrans = 1.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userf(i,j,k,eg) ! set acceleration term
+c
+c     Note: this is an acceleration term, NOT a force!
+c     Thus, ffx will subsequently be multiplied by rho(x,t).
+c
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      integer e,eg
+
+c     e = gllel(eg)
+
+      ffx = 0.0
+      ffy = 0.0
+      ffz = 0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userq(i,j,k,eg) ! set source term
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      integer e,eg
+
+c     e = gllel(eg)
+
+      qvol   = 0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userbc(i,j,k,f,eg) ! set up boundary conditions
+c     NOTE ::: This routine MAY NOT be called by every process
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      common /hartmn/ Ha
+
+      integer e,eg
+
+      if (ifield.eq.1) then
+         ux   = 0.0
+         uy   = 0.0
+         uz   = 0.0
+      else
+         ux   = 0.0
+         uy   = Ha        ! Hartmann number for case Re=Rm=1
+         uz   = 0.0
+      endif
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine useric(i,j,k,eg) ! set up initial conditions
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+      integer e,eg
+
+      common /hartmn/ Ha
+
+      if (ifield.eq.1) then
+         ux   = 0.0
+         uy   = 0.0
+         uz   = 0.0
+      elseif (ifield.eq.ifldmhd) then
+         ux   = 0.0
+         uy   = Ha        ! Hartmann number for case Re=Rm=1
+         uz   = 0.0
+      endif
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userchk
+      
+      include 'SIZE'
+      include 'TOTAL'
+      include 'MOR'
+
+      param(170) = -1
+      ifmhdcrossterms=.true.
+      ifmhdfixskew=.true.
+
+      n = lx1*ly1*lz1*nelv
+
+      umx = glmax(vx,n)
+      vmx = glmax(vy,n)
+      wmx = glmax(vz,n)
+
+      ubx = glmax(bx,n)
+      vbx = glmax(by,n)
+      wbx = glmax(bz,n)
+
+      if (nio.eq.0) write(6,1) istep,time,umx,vmx,wmx,ubx,vbx,wbx
+    1 format(i9,1p7e12.4,' umax')
+
+      ! if (istep.gt.0) then
+      !   if (mod(istep,iostep).eq.0) call outpost(bx,by,bz,pr,t,'   ')
+      ! endif
+
+      call rom_update
+
+      call exitt0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine sub_mean(u,v,w)
+      include 'SIZE'
+      include 'TOTAL'
+      integer n
+      real ubar, vbar, wbar
+
+      n    = lx1*ly1*lz1*nelv
+      ubar = glsc2(u,bm1,n)/volvm1
+      vbar = glsc2(v,bm1,n)/volvm1
+      wbar = glsc2(w,bm1,n)/volvm1
+
+      write(*,*) 'HERE bar: ', vbar
+
+      call cadd(u, -ubar,n)   ! u := u - ubar
+      call cadd(v, -vbar, n)
+      call cadd(w, -wbar, n)
+      end
+c-----------------------------------------------------------------------
+      subroutine userqtl ! Set thermal divergence
+
+      call userqtl_scig
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat   ! This routine to modify element vertices
+      include 'SIZE'
+      include 'TOTAL'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat3
+      include 'SIZE'
+      include 'TOTAL'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat2
+      include 'SIZE'
+      include 'TOTAL'
+
+      common /hartmn/ Ha
+
+      ifuservp = .true. ! Get props from uservp
+
+      Ha = 10.  ! Hartmann number for case Re=Rm=1
+
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine rom_userchk
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'AVG'
+      include 'MOR'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+      parameter (ltot1=lx1*ly1*lz1*lelt)
+
+      common /scrsetb/ bxx(lt),byy(lt),bzz(lt),bwk(lb+1)
+      common /scrsetf/ wk1(ltot1),wk2(ltot1),wk3(ltot1),wk(lb+1)
+
+      logical ifexist
+      real temp(0:nb)
+      integer z
+      integer n
+      real ubar, vbar, wbar
+
+      ntot =nx1*ny1*nz1*nelv
+
+
+      call reconv(vx,vy,vz,u)
+      if (ifrom(ifldb)) call reconb(bx,by,bz,b)
+      ! call hpts
+      
+       if (.false.) then
+c      if (ad_step.eq.0) then
+            do i=1,lsu
+                  call pv2b(temp,us0(1,1,i),us0(1,2,i),us0(1,3,i)
+     $            ,ub,vb,wb)
+                  do z=0,nb
+                        write(*,*) 'u projection: ', i, temp(z)
+                  enddo
+            enddo
+            do i=1,lsu
+                  call pv2b(temp,bs0(1,1,i),bs0(1,2,i),bs0(1,3,i)
+     $            ,bxb,byb,bzb)
+                  do z=0,nb
+                        write(*,*) 'b projection: ', i, temp(z)
+                  enddo
+            enddo
+
+            
+
+            do i=0,nb
+            write(*,*) 'ubasisnorms ', 
+     $         op_glsc2_wt(ub(1,i),vb(1,i),wb(1,i), 
+     $         ub(1,i),vb(1,i),wb(1,i), bm1)  
+            write(*,*) 'bbasisnorms ', 
+     $         op_glsc2_wt(bxb(1,i),byb(1,i),bzb(1,i), 
+     $         bxb(1,i),byb(1,i),bzb(1,i), bm1) 
+
+
+              call sub_mean(bxb(1,i),byb(1,i),bzb(1,i)) 
+            call outpost(bxb(1,i),byb(1,i),bzb(1,i),
+     $                  pb(1,i),tb(1,i,1),'zzz')
+
+             write(*,*) 'ubasisnorms2 ', 
+     $         op_glsc2_wt(ub(1,i),vb(1,i),wb(1,i), 
+     $         ub(1,i),vb(1,i),wb(1,i), bm1)  
+            write(*,*) 'bbasisnorms2 ', 
+     $         op_glsc2_wt(bxb(1,i),byb(1,i),bzb(1,i), 
+     $         bxb(1,i),byb(1,i),bzb(1,i), bm1)  
+
+            enddo
+            
+      endif
+
+
+      write(6,1) ad_step,time,(u(k),k=1,nb),(b(k),k=1,nb)
+    1 format(i9,1p9e12.4,' coefs')
+
+
+      if (ad_step.eq.0) then
+            
+         if (rmode.eq.'ON '.or.rmode.eq.'CP ') then
+            inquire (file='ops/rf',exist=ifexist)
+            if (ifexist) call read_serial(rf,nb,'ops/rf ',wk,nid)
+         else
+            write(*,*) 'BUILDING', ''
+            call copy(fz,bm1,ntot)
+            call cmult(fz,1.0,ntot)
+            call rzero(fy,ntot)
+            call rzero(fx,ntot)
+
+            ! Construct body force operator by
+            ! integrating test function with body force
+            call rzero(rf,nb)
+            do i=1,nb
+               rf(i)=glsc2(ub(1,i),fx,ntot)+glsc2(vb(1,i),fy,ntot)
+               if (ldim.eq.3) rf(i)=rf(i)+glsc2(wb(1,i),fz,ntot)
+               if (nio.eq.0) write (6,*) rf(i),i,'rf'
+            enddo
+            call dump_serial(rf,nb,'ops/rf ',nid)
+
+            ! Verify that the body force is 2
+            call opcopy(wk1,wk2,wk3,fx,fy,fz)
+            call opbinv1(wk1,wk2,wk3,wk1,wk2,wk3,1.)
+            iftmp=ifxyo
+            ifxyo=.true.
+            call outpost(wk1,wk2,wk3,pavg,tavg,'fff')
+            ifxyo=iftmp
+         endif
+      endif
+
+      if (ad_step.eq.nsteps) then
+            write(*,*) 'writing averages', ''
+            n    = lx1*ly1*lz1*nelv
+            wbar = glsc2(bz,bm1,n)/volvm1
+            write(*,*) 'averages: ', wbar
+      endif
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine rom_userbases
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'MOR'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine rom_userfop
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'MOR'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine rom_userrhs(rom_rhs)
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'MOR'
+
+      ! if (ifrom(1).and.ifield.eq.1) then
+      !   write(*,*) 'ADDING TO RHS', ''
+      !   call add2s2(rom_rhs,rf,param(2),nb)
+      ! endif
+
+      return
+      end
+c-----------------------------------------------------------------------
