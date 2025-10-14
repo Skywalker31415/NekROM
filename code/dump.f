@@ -222,6 +222,19 @@ c-----------------------------------------------------------------------
          call dump_global(ctl,ncloc,'ops/ct ',wk1,wk2,nid)
       endif
 
+      if (ifpod(ifldb)) then
+         call dump_serial(b,(nb+1)*3,'ops/b ',nid)
+         call dump_serial(bk,ns*(nb+1),'ops/bk ',nid)
+         call dump_serial(bmin,nb,'ops/bmin ',nid)
+         call dump_serial(bmax,nb,'ops/bmax ',nid)
+         call dump_serial(ab0,(nb+1)**2,'ops/ab ',nid)
+         call dump_serial(bb0,(nb+1)**2,'ops/bb ',nid)
+         call dump_serial(cul,ncloc,'ops/cuu ',nid)
+         call dump_serial(cbl,ncloc,'ops/cbb ',nid)
+         call dump_serial(cbul,ncloc,'ops/cbu ',nid)
+         call dump_serial(cubl,ncloc,'ops/cub ',nid)         
+      endif
+
       if (ifforce)  call dump_serial(rf,nb,'ops/rf ',nid)
       if (ifsource) call dump_serial(rq,nb,'ops/rq ',nid)
 
@@ -254,6 +267,16 @@ c-----------------------------------------------------------------------
          ifxyo=(i.eq.0)
          call outpost(ub(1,i),vb(1,i),wb(1,i),pb(1,i),tb(1,i,1),'bas')
       enddo
+
+      if(ifrom(ifldb)) then
+      do i=0,nb
+      time=i
+      itmp=i
+      ifxyo=(i.eq.0)
+      call outpost(bxb(1,i),byb(1,i),bzb(1,i),pb(1,i),tb(1,i,1),'bbs')
+      enddo
+      endif
+   
 
       istep=itmp
       time=ttmp
@@ -356,6 +379,15 @@ c-----------------------------------------------------------------------
          call outpost2(ub(1,i),vb(1,i),wb(1,i),pb(1,i),tmp,ldimt,'bas')
       enddo
 
+      if(ifrom(ifldb)) then
+      do i=0,nb
+      time=i
+      itmp=i
+      ifxyo=(i.eq.0)
+      call outpost(bxb(1,i),byb(1,i),bzb(1,i),pb(1,i),tb(1,i,1),'bbs')
+      enddo
+      endif
+
       istep=itmp
       time=ttmp
 
@@ -415,6 +447,13 @@ c-----------------------------------------------------------------------
          call dump_serial(tmax,nb,'ops/tmax ',nid)
          if (.not.ifpod(1))
      $      call dump_serial(timek,ns,'ops/timek ',nid)
+      endif
+
+      if (ifrom(ifldb)) then
+         call dump_serial(b,(nb+1)*3,'ops/b ',nid)
+         call dump_serial(bk,ns*(nb+1),'ops/bk ',nid)
+         call dump_serial(bmin,nb,'ops/bmin ',nid)
+         call dump_serial(bmax,nb,'ops/bmax ',nid)         
       endif
 
       if (ifforce)  call dump_serial(rf,nb,'ops/rf ',nid)

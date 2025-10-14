@@ -134,6 +134,29 @@ c        call opadds(ux,uy,uz,ub(1,i),vb(1,i),wb(1,i),coef(i),n,2)
       return
       end
 c-----------------------------------------------------------------------
+      subroutine reconb(bx,by,bz,coef)
+
+      include 'SIZE'
+      include 'MOR'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+
+      real bx(lt),by(lt),bz(lt),coef(0:nb)
+
+      n=lx1*ly1*lz1*nelv
+
+      call opzero(bx,by,bz)
+
+      do i=0,nb
+         call add2s2(bx,bxb(1,i),coef(i),n)
+         call add2s2(by,byb(1,i),coef(i),n)
+         call add2s2(bz,bzb(1,i),coef(i),n)
+c        call opadds(bx,by,bz,bxb(1,i),byb(1,i),bzb(1,i),coef(i),n,2)
+      enddo
+
+      return
+      end
+c-----------------------------------------------------------------------
       subroutine ctke_fom(tke,ux,uy,uz,uavg,vavg,wavg)
 
       include 'SIZE'

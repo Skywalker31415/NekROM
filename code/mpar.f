@@ -68,7 +68,14 @@ c-----------------------------------------------------------------------
       if (ifnd.eq.1) then
          call capit(c_out,132)
 
-         if (index(c_out,'VT').eq.1) then
+         if (index(c_out, 'VTB').eq.1) then
+            ifpod(1)=.true.
+            ifpod(2)=ifheat
+            ifpod(ifldb)=.true.
+         elseif (index(c_out, 'VB').eq.1) then
+            ifpod(1)=.true.
+            ifpod(ifldb)=.true.
+         elseif (index(c_out,'VT').eq.1) then
             ifpod(1)=.true.
             ifpod(2)=ifheat
          elseif (index(c_out,'V').eq.1) then
@@ -84,6 +91,7 @@ c-----------------------------------------------------------------------
       ifrom(1)=ifpod(1)
       ifpod(1)=ifpod(1).or.ifrom(2)
       ifrom(2)=ifpod(2)
+      ifrom(ifldb)=ifpod(ifldb)
 
       call finiparser_getdbl(d_out,'general:nb',ifnd)
       if (ifnd.eq.1) nb=min(nint(d_out),lb)
@@ -411,27 +419,6 @@ c-----------------------------------------------------------------------
          endif
       endif
 
-      call finiparser_getdbl(d_out,'filter:relaxation',ifnd)
-      if (ifnd.eq.1) relax=d_out
-
-      ! Regularization
-
-      call finiparser_getstring(c_out,'regularization:type',ifnd)
-      if (ifnd.eq.1) then
-         call capit(c_out,132)
-         if (index(c_out,'LERAY').eq.1) then
-            regtype='LERAY'
-         else if (index(c_out,'EFR').eq.1) then
-            regtype='EFR  '
-         else if (index(c_out,'TR').eq.1) then
-            regtype='TR   '
-         else
-            regtype='INVA '
-            write (6,*) 'invalid option for regularization:type ',c_out
-            ierr=ierr+1
-         endif
-      endif
-
       ! EI
 
       call finiparser_getbool(i_out,'ei:mode',ifnd)
@@ -537,7 +524,6 @@ c-----------------------------------------------------------------------
       call bcast(ips,csize*3)
       call bcast(cfloc,csize*4)
       call bcast(cftype,csize*4)
-      call bcast(regtype,csize*5)
 
       ! integers
 
@@ -569,7 +555,6 @@ c-----------------------------------------------------------------------
       call bcast(tbarr0,wdsize)
       call bcast(rbf,wdsize)
       call bcast(rdft,wdsize)
-      call bcast(relax,wdsize)
       call bcast(gx,wdsize)
       call bcast(gy,wdsize)
       call bcast(gz,wdsize)
@@ -579,7 +564,7 @@ c-----------------------------------------------------------------------
 
       call bcast(ifrecon,lsize)
 
-      do i=0,ldimt1
+      do i=0,ldimt3
          call bcast(ifpod(i),lsize)
          call bcast(ifrom(i),lsize)
       enddo

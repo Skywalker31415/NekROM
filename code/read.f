@@ -135,7 +135,7 @@ c-----------------------------------------------------------------------
 
       if (ifexist) then
          nn=nb+1
-         do i=0,ldimt1
+         do i=0,ldimt3
             ifreads(i)=ifrom(i)
          enddo
 
@@ -207,7 +207,7 @@ c-----------------------------------------------------------------------
       character*128 fn
       character*128 fnlint
 
-      logical ifa,ifread(0:ldimt1)
+      logical ifa,ifread(0:ldimt3)
 
       common /scrk2/ t4(lt),t5(lt),t6(lt)
 

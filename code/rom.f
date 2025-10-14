@@ -1483,11 +1483,11 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
-      subroutine setb(b,b0,fname)
+      subroutine setb(bop,b0,fname)
 
       ! set mass operator B
 
-      ! b     := rom operator B w/o 0th mode interactions
+      ! bop     := rom operator B w/o 0th mode interactions
       ! b0    := rom operator B w/  0th mode interactions
       ! fname := read target
 
@@ -1500,7 +1500,7 @@ c-----------------------------------------------------------------------
 
       common /scrread/ tab((lub+1)**2)
 
-      real b(nb,nb),b0(0:nb,0:nb)
+      real bop(nb,nb),b0(0:nb,0:nb)
 
       character*128 fname
 
@@ -1537,7 +1537,7 @@ c           call cmult(vdm1,sc,n)
 
       do j=1,nb
       do i=1,nb
-         b(i,j)=b0(i,j)
+         bop(i,j)=b0(i,j)
       enddo
       enddo
 

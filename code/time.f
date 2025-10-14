@@ -833,18 +833,18 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
-      subroutine seth(flu,a,b,ad_diff)
+      subroutine seth(flu,a,btemp,ad_diff)
 
       include 'SIZE'
       include 'MOR'
 
-      real flu(nb,nb),a(nb,nb),b(nb,nb)
+      real flu(nb,nb),a(nb,nb),btemp(nb,nb)
 
       if (ad_step.le.3) then
-         call cmult2(flu,b,ad_beta(1,ad_step)/ad_dt,nb*nb)
+         call cmult2(flu,btemp,ad_beta(1,ad_step)/ad_dt,nb*nb)
          call add2s2(flu,a,ad_diff,nb*nb)
          if (ifhelm) then
-            call add2s2(flu,b,ad_mu,nb*nb)
+            call add2s2(flu,btemp,ad_mu,nb*nb)
          endif
       endif
          
