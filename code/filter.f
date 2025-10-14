@@ -74,23 +74,23 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
-      subroutine setdf(flu,a,b,ad_diff)
-      ! Set up ROM differential filter (DF) operator 
-      ! :math:`B + \text{filter radius} * A`.
-      !
-      ! flu:= output, differential filter operator.
-      ! a:= input, ROM stiffness matrix.
-      ! b:= input, ROM mass matrix.
-      ! ad_diff:= input, filter radius.
-      !
+      subroutine setdf(flu,a,bmass,ad_diff)
+
+      ! Set up differential filter (DF) operator B + ad_diff * A
+
+      ! flu := differential filter operator
+      ! a := ROM stiffness matrix
+      ! bmass := ROM mass matrix
+      ! ad_diff := radius of the DF
+
       include 'SIZE'
       include 'MOR'
 
-      real flu(nb*nb),a(nb*nb),b(nb*nb)
+      real flu(nb*nb),a(nb*nb),bmass(nb*nb)
       real ad_diff
       
       call cmult2(flu,a,ad_diff,nb*nb)
-      call add2(flu,b,nb*nb)
+      call add2(flu,bmass,nb*nb)
          
       return
       end

@@ -16,6 +16,23 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+      subroutine setcnv_bc(bcx,bcy,bcz)
+
+      include 'SIZE'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+      parameter (ltd=lxd*lyd*lzd*lelt)
+
+      common /convectb/ bc1v(ltd),bc2v(ltd),bc3v(ltd),
+     $                 bu1v(ltd),bu2v(ltd),bu3v(ltd)
+
+      real bcx(lt),bcy(lt),bcz(lt)
+
+      call set_convect_new(bc1v,bc2v,bc3v,bcx,bcy,bcz)
+
+      return
+      end
+c-----------------------------------------------------------------------
       subroutine setcnv_u(ux,uy,uz)
 
       include 'SIZE'
@@ -31,6 +48,26 @@ c-----------------------------------------------------------------------
       call intp_rstd_all(u1v,ux,nelv)
       call intp_rstd_all(u2v,uy,nelv)
       if (ldim.eq.3) call intp_rstd_all(u3v,uz,nelv)
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine setcnv_bu(bx,by,bz)
+
+      include 'SIZE'
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+      parameter (ltd=lxd*lyd*lzd*lelt)
+
+      common /convectb/ bc1v(ltd),bc2v(ltd),bc3v(ltd),
+     $                 bu1v(ltd),bu2v(ltd),bu3v(ltd)
+
+      real bx(lt),by(lt),bz(lt)
+
+
+      call intp_rstd_all(bu1v,bx,nelv)
+      call intp_rstd_all(bu2v,by,nelv)
+      if (ldim.eq.3) call intp_rstd_all(bu3v,bz,nelv)
 
       return
       end

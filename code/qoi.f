@@ -34,11 +34,11 @@ c-----------------------------------------------------------------------
 
       do k=1,lk
          ak=glsc2(wsck(1,2,k),g,n) ! cosine coefficients
-         bk=glsc2(wsck(1,1,k),g,n) ! sine coefficients
+         ck=glsc2(wsck(1,1,k),g,n) ! sine coefficients
 
-         fd(1)=fd(1)-(ak*abveck(1,1,k)+bk*abveck(2,1,k))/real(2*k)
-         fd(2)=fd(2)+(ak*abveck(1,2,k)+bk*abveck(2,2,k))/real(2*k)
-c        write (6,*) 'ak pdrag',k,ak,bk,fd(1),fd(2),lk
+         fd(1)=fd(1)-(ak*abveck(1,1,k)+ck*abveck(2,1,k))/real(2*k)
+         fd(2)=fd(2)+(ak*abveck(1,2,k)+ck*abveck(2,2,k))/real(2*k)
+c        write (6,*) 'ak pdrag',k,ak,ck,fd(1),fd(2),lk
       enddo
       call gop(fd(1),wk1,'+  ',1)
       call gop(fd(2),wk1,'+  ',1)
