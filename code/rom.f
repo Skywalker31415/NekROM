@@ -261,6 +261,8 @@ c-----------------------------------------------------------------------
 
       common /mhdflag/ icalldmhd
 
+      ubdim = lx1*ly1*lz1*lelm
+
       if (nio.eq.0) write (6,*) 'inside rom_setup_mhd'
       jfield = ifield
       ifield=ifldmhd
@@ -285,9 +287,6 @@ c      call mor_set_params_uni_pre
       enddo
       enddo
       enddo
-
-      ubdim = lx1*ly1*lz1*lelm
-
 
       call copy(bs0,us0,lx1*ly1*lz1*lelm*ldim*lsu)
 
