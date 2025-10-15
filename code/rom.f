@@ -138,8 +138,7 @@ c        cts='rkck  '
                   if (rmode.ne.'ON ') then
                      call outpost(vx,vy,vz,pr,t,'rom')
                      if (ifrom(ifldb)) then
-                        write(*,*) 'ROM HERE', ''
-                        call outpost(bx,by,bz,pr,t,'romb')
+                        call outpost(bx,by,bz,pr,t,'mgn')
                      endif
                   endif
                endif
@@ -274,29 +273,23 @@ c      call mor_set_params_uni_pre
       call mor_set_params_uni_post
 
       if (ifsetbases) call setbases
-      call rom_userbases
-
-
-      ubdim = lx1*ly1*lz1*lelm
 
       ! TODO: fix copy
-
-      call copy(bs0,us0,lx1*ly1*lz1*lelm*ldim*lsu)
-
       do i=1,ubdim
       do j=0,lub
          bxb(i,j) = ub(i,j)
          byb(i,j) = vb(i,j)
          bzb(i,j) = wb(i,j)
-      do k=0,ldim
+      do k=1,ldim
          bxyzb(i,k,j) = uvwb(i,k,j)
       enddo
       enddo
       enddo
-      
-      if (rmode.eq.'ALL'.or.rmode.eq.'OFF'.or.rmode.eq.'AEQ') then
-         call dump_bas
-      endif
+
+      ubdim = lx1*ly1*lz1*lelm
+
+
+      call copy(bs0,us0,lx1*ly1*lz1*lelm*ldim*lsu)
 
       
       icalldmhd=2
@@ -1497,7 +1490,7 @@ c-----------------------------------------------------------------------
       !call lints(fnlint,fn4,128)
       !if (nid.eq.0) open (unit=103,file=fnlint)
 
-      write(*,*) 'inside setc_mhd', ''
+      if (nio.eq.0) write(*,*) 'inside setc_mhd', ''
 
       call cpart(kc1,kc2,jc1,jc2,ic1,ic2,ncloc,nb,np,nid+1)
 
@@ -1518,6 +1511,7 @@ c-----------------------------------------------------------------------
       !TODO: adjust for loop for lbb != lub
       
       do k=0,nb
+         write(*,*) 'setc_mhd: ', k
          call setcnv_c(ub(1,k),vb(1,k),wb(1,k))
          call setcnv_bc(bxb(1,k),byb(1,k),bzb(1,k))
       do j=0,nb
@@ -2285,7 +2279,7 @@ c-----------------------------------------------------------------------
 
          iftmp=ifxyo
          ifxyo=.true.
-         if (ifrecon) call outpost(bxx,byy,bzz,pr,tt,'romb')
+         if (ifrecon) call outpost(bxx,byy,bzz,pr,tt,'mgn')
 
          ttime=time
          jstep=istep

@@ -662,7 +662,7 @@ c        call cubar
             call outpost(vx,vy,vz,pavg,vort,'rom')
             if (ifrom(ifldb)) then
                call reconb(bx,by,bz,b)
-               call outpost(bx,by,bz,pr,t,'romb')
+               call outpost(bx,by,bz,pr,t,'mgn')
             endif
             istep=jstep
          endif
