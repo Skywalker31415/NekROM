@@ -229,10 +229,10 @@ c-----------------------------------------------------------------------
          call dump_serial(bmax,nb,'ops/bmax ',nid)
          call dump_serial(ab0,(nb+1)**2,'ops/ab ',nid)
          call dump_serial(bb0,(nb+1)**2,'ops/bb ',nid)
-         call dump_serial(cul,ncloc,'ops/cuu ',nid)
-         call dump_serial(cbl,ncloc,'ops/cbb ',nid)
-         call dump_serial(cbul,ncloc,'ops/cbu ',nid)
-         call dump_serial(cubl,ncloc,'ops/cub ',nid)         
+         call dump_global(cul,ncloc,'ops/cuu ',nid)
+         call dump_global(cbl,ncloc,'ops/cbb ',nid)
+         call dump_global(cbul,ncloc,'ops/cbu ',nid)
+         call dump_global(cubl,ncloc,'ops/cub ',nid)         
       endif
 
       if (ifforce)  call dump_serial(rf,nb,'ops/rf ',nid)
@@ -329,6 +329,15 @@ c        call dump_global(cul,ncloc,'ops/cu ',wk1,wk2,nid)
          call dump_serial(bt0,(nb+1)**2,'ops/bt ',nid)
          call dump_serial(st0,nb+1,'ops/st ',nid)
 c        call dump_global(ctl,ncloc,'ops/ct ',wk1,wk2,nid)
+      endif
+
+      if (ifrom(ifldb)) then
+         call dump_serial(ab0,(nb+1)**2,'ops/ab ',nid)
+         call dump_serial(bb0,(nb+1)**2,'ops/bb ',nid)
+         call dump_global(cul,ncloc,'ops/cuu ',nid)
+         call dump_global(cbl,ncloc,'ops/cbb ',nid)
+         call dump_global(cbul,ncloc,'ops/cbu ',nid)
+         call dump_global(cubl,ncloc,'ops/cub ',nid)         
       endif
 
       call nekgsync
