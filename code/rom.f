@@ -480,10 +480,10 @@ c-----------------------------------------------------------------------
             call setc_mhd(cul,cbl,cubl,cbul
      $                    ,'ops/cuu', 'ops/cbb', 'ops/cub', 'ops/cbu')
             if (ifmhdfixskew) call fix_skew_mhd
-            call dump_serial(cul,ncloc,'ops/cuu ',nid)
-            call dump_serial(cbl,ncloc,'ops/cbb ',nid)
-            call dump_serial(cbul,ncloc,'ops/cbu ',nid)
-            call dump_serial(cubl,ncloc,'ops/cub ',nid)
+            call dump_global(cul,ncloc,'ops/cuu ',nid)
+            call dump_global(cbl,ncloc,'ops/cbb ',nid)
+            call dump_global(cbul,ncloc,'ops/cbu ',nid)
+            call dump_global(cubl,ncloc,'ops/cub ',nid)
          endif
       endif
       if (ifrom(2)) then
@@ -1614,11 +1614,6 @@ c-----------------------------------------------------------------------
      $                  ,cbul((i-1)*nb*(nb+1) + nb + 1),nb)
          call cmult(cbl((i-1)*nb*(nb+1) + nb + 1),-1.0,nb*nb)
       enddo
-
-c      call dump_serial(cul,ncloc,'ops/cuu ',nid)
-c      call dump_serial(cbl,ncloc,'ops/cbb ',nid)
-c      call dump_serial(cbul,ncloc,'ops/cbu ',nid)
-c      call dump_serial(cubl,ncloc,'ops/cub ',nid)
 
       return
       end
