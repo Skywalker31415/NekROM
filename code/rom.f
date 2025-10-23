@@ -1314,9 +1314,11 @@ c           if (idc_t.gt.0) call rzero(tb,n)
          iftmp=ifxyo
          ifxyo=.true.
          if (ifrecon) then
+            write(*,*) nid, "here avg rom.f" 
             call outpost(uavg,vavg,wavg,pavg,tavg,'avg')
-            call outpost(urms,vrms,wrms,prms,trms,'rms')
-            call outpost(vwms,wums,uvms,prms,trms,'tmn')
+            write(*,*) nid, "here avg rom.f 2" 
+!            call outpost(urms,vrms,wrms,prms,trms,'rms')
+!            call outpost(vwms,wums,uvms,prms,trms,'tmn')
          endif
          ifxyo=iftmp
 
@@ -2726,26 +2728,3 @@ c              call outpost(cux,cuy,cuz,pr,tb(1,k,4),'stt')
       return
       end
 c-----------------------------------------------------------------------
-      subroutine copy2(a,b,nx,ny)
-      real a(1,1),b(1,1)
-
-      do i=1,nx
-      do j=0,ny-1
-         a(i,j)=b(i,j)
-      enddo
-      enddo
-      return
-      end
-c-----------------------------------------------------------------------
-      subroutine copy3(a,b,nx,ny,nz)
-      real a(1,1,1),b(1,1,1)
-
-      do i=1,nx
-      do j=1,ny
-      do k=0,nz-1
-         a(i,j,k)=b(i,j,k)
-      enddo
-      enddo
-      enddo
-      return
-      end
